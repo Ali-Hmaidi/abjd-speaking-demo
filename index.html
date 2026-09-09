@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Abjad Speaking Tasks — Demo</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <header class="site-header">
+    <h1>🎙 Abjad Speaking Tasks</h1>
+    <p class="subtitle">Live demo — Azure Speech, three component ideas for English speaking practice</p>
+  </header>
+
+  <section class="config-bar" id="configBar">
+    <div class="config-row" id="configRow">
+      <label for="keyInput">Azure Speech key</label>
+      <input id="keyInput" type="password" placeholder="Paste your subscription key" autocomplete="off" />
+      <label for="regionInput">Region</label>
+      <input id="regionInput" type="text" placeholder="e.g. israelcentral" autocomplete="off" />
+      <button id="saveConfigBtn">Connect</button>
+    </div>
+    <div class="config-foot">
+      <span id="configStatus" class="status status-idle">Not connected</span>
+      <span class="config-hint" id="configHint">Fallback entry — normally the key comes from <code>.env</code>.</span>
+    </div>
+  </section>
+
+  <nav class="tabs" id="tabs">
+    <button class="tab-btn active" data-tab="read-aloud">Read-Aloud Scoring</button>
+    <button class="tab-btn" data-tab="picture">Picture Description</button>
+    <button class="tab-btn" data-tab="qa">Verbal Q&amp;A</button>
+  </nav>
+
+  <main>
+
+    <!-- 1. READ-ALOUD -->
+    <section class="tab-panel active" id="panel-read-aloud">
+      <div class="card">
+        <div class="card-head">
+          <h2>Read this sentence aloud</h2>
+          <button id="newSentenceBtn" class="ghost-btn">🔀 New sentence</button>
+        </div>
+        <p class="prompt-text" id="sentenceText">The quick brown fox jumps over the lazy dog.</p>
+        <div class="controls">
+          <button id="hearItBtn" class="secondary-btn">🔊 Hear it</button>
+          <button id="raRecordBtn" class="mic-btn">🎙 Record</button>
+          <span id="raStatus" class="status status-idle">Idle</span>
+          <span id="raTimer" class="timer" hidden>0.0s</span>
+        </div>
+
+        <!-- Live feedback while recording: proves the mic is open and Azure is listening. -->
+        <div class="mic-monitor" id="raMonitor" hidden>
+          <div class="monitor-row">
+            <span class="monitor-label">🎤 Mic</span>
+            <div class="level-track"><div class="level-fill" id="raLevel"></div></div>
+            <span class="level-hint" id="raLevelHint">waiting for sound…</span>
+          </div>
+          <div class="monitor-row">
+            <span class="monitor-label">☁️ Azure</span>
+            <span class="pipeline-state" id="raPipeline">connecting…</span>
+          </div>
+          <p class="interim-text" id="raInterim" aria-live="polite"></p>
+        </div>
+
+        <div class="results" id="raResults" hidden>
+          <div class="score-summary">
+            <div class="score-big" id="raOverallScore">—</div>
+            <div class="score-big-label">Overall pronunciation score</div>
+          </div>
+          <div class="score-bars">
+            <div class="score-bar-row">
+              <span>Accuracy</span>
+              <div class="score-bar"><div class="score-bar-fill" id="raAccuracyBar"></div></div>
+              <span id="raAccuracyVal">—</span>
+            </div>
+            <div class="score-bar-row">
+              <span>Fluency</span>
+              <div class="score-bar"><div class="score-bar-fill" id="raFluencyBar"></div></div>
+              <span id="raFluencyVal">—</span>
+            </div>
+            <div class="score-bar-row">
+              <span>Completeness</span>
+              <div class="score-bar"><div class="score-bar-fill" id="raCompletenessBar"></div></div>
+              <span id="raCompletenessVal">—</span>
+            </div>
+          </div>
+          <div class="word-legend">
+            <span class="word correct">correct</span>
+            <span class="word error">mispronounced</span>
+            <span class="word omission">omitted</span>
+            <span class="word insertion">inserted</span>
+          </div>
+          <p class="word-render" id="raWordRender"></p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 2. PICTURE DESCRIPTION -->
+    <section class="tab-panel" id="panel-picture">
+      <div class="card">
+        <h2>Describe what you see</h2>
+        <p class="hint">Speak for at least 20-30 seconds. Try to describe who's there, what they're doing, and where they are.</p>
+        <div class="picture-frame">
+          <svg viewBox="0 0 400 240" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A family picnic in a park">
+            <rect width="400" height="240" fill="#bfe6f7"/>
+            <circle cx="350" cy="40" r="24" fill="#ffd166"/>
+            <rect x="0" y="170" width="400" height="70" fill="#8fd694"/>
+            <rect x="60" y="90" width="18" height="80" fill="#8a5a3b"/>
+            <circle cx="69" cy="80" r="42" fill="#4caf6a"/>
+            <ellipse cx="220" cy="205" rx="60" ry="14" fill="#dcd0f0"/>
+            <circle cx="190" cy="175" r="14" fill="#f4b183"/>
+            <rect x="180" y="188" width="20" height="30" rx="6" fill="#e06666"/>
+            <circle cx="230" cy="180" r="12" fill="#f4b183"/>
+            <rect x="221" y="191" width="18" height="26" rx="6" fill="#6fa8dc"/>
+            <circle cx="255" cy="178" r="11" fill="#f4b183"/>
+            <rect x="247" y="188" width="16" height="24" rx="6" fill="#93c47d"/>
+            <rect x="150" y="196" width="30" height="6" fill="#e69138"/>
+            <circle cx="320" cy="215" r="10" fill="#b45f06"/>
+            <rect x="312" y="222" width="16" height="8" fill="#b45f06"/>
+          </svg>
+        </div>
+        <div class="controls">
+          <button id="picMicBtn" class="mic-btn">🎙 Start Speaking</button>
+          <span id="picStatus" class="status status-idle">Idle</span>
+        </div>
+        <div class="transcript-box" id="picTranscript" aria-live="polite"></div>
+        <div class="stats-row" id="picStats" hidden>
+          <span id="picTime">0s</span>
+          <span id="picWords">0 words</span>
+          <span id="picWpm">— wpm</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- 3. VERBAL Q&A -->
+    <section class="tab-panel" id="panel-qa">
+      <div class="card">
+        <div class="card-head">
+          <h2 id="qaQuestion">What did you do last weekend?</h2>
+          <button id="newQuestionBtn" class="ghost-btn">🔀 New question</button>
+        </div>
+        <div class="controls">
+          <button id="qaMicBtn" class="mic-btn">🎙 Start Answer</button>
+          <span id="qaStatus" class="status status-idle">Idle</span>
+        </div>
+        <div class="transcript-box" id="qaTranscript" aria-live="polite"></div>
+        <div class="controls">
+          <button id="qaSubmitBtn" class="secondary-btn" disabled>Submit Answer</button>
+        </div>
+        <div class="results" id="qaResult" hidden>
+          <p><strong>Your answer:</strong> <span id="qaFinalAnswer"></span></p>
+          <div class="future-note">
+            🔧 AI feedback would appear here — grading a free-form answer needs an LLM
+            call through our pipeline's backend, which this standalone demo doesn't have.
+            That's the next build step if this is approved.
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <footer class="site-footer">
+    Standalone demo — no backend, runs entirely in this browser against Azure Speech.
+    Not connected to the real Abjad pipeline.
+  </footer>
+
+  <!-- Azure Speech SDK (browser UMD bundle), pinned version -->
+  <script src="https://cdn.jsdelivr.net/npm/microsoft-cognitiveservices-speech-sdk@1.51.0/distrib/browser/microsoft.cognitiveservices.speech.sdk.bundle-min.js"></script>
+  <!-- Generated by server.js from .env — not a file on disk -->
+  <script src="/config.js"></script>
+  <script src="speech.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

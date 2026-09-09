@@ -216,3 +216,11 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# --- Node / this project ---
+node_modules/
+npm-debug.log*
+
+# Azure Speech credentials — never commit
+.env
+.env.local
