@@ -47,7 +47,7 @@ async function createMicMeter({ onLevel, onError } = {}) {
         ? "Microphone permission denied — click the icon in the address bar and allow the mic."
         : "No microphone found. Check your input device and reload."
     );
-    return { stop() {} };
+    return null;
   }
 
   const ctx = new (window.AudioContext || window.webkitAudioContext)();
@@ -77,11 +77,46 @@ async function createMicMeter({ onLevel, onError } = {}) {
   };
   tick();
 
+  // Optional tape of the take, so individual words can be replayed afterwards.
+  let recorder = null;
+  let chunks = [];
+  let recordingStartedAt = null;
+
   return {
+    /** Start taping. Called at the same moment recognition starts, to keep offsets aligned. */
+    startRecording() {
+      if (typeof MediaRecorder === "undefined") return;
+      try {
+        recorder = new MediaRecorder(stream);
+        chunks = [];
+        recorder.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
+        recorder.start();
+        recordingStartedAt = Date.now();
+      } catch (_e) {
+        recorder = null; // replay is a bonus; scoring still works without it
+      }
+    },
+
+    get recordingStartedAt() { return recordingStartedAt; },
+
+    /** Stops metering and taping. Resolves to an object URL for the take, or null. */
     stop() {
       if (raf) cancelAnimationFrame(raf);
-      stream.getTracks().forEach((t) => t.stop());
-      if (ctx.state !== "closed") ctx.close().catch(() => {});
+      raf = null;
+      const finished = new Promise((resolve) => {
+        if (!recorder || recorder.state === "inactive") return resolve(null);
+        recorder.onstop = () => {
+          resolve(chunks.length
+            ? URL.createObjectURL(new Blob(chunks, { type: recorder.mimeType || "audio/webm" }))
+            : null);
+        };
+        try { recorder.stop(); } catch (_e) { resolve(null); }
+      });
+      return finished.then((url) => {
+        stream.getTracks().forEach((t) => t.stop());
+        if (ctx.state !== "closed") ctx.close().catch(() => {});
+        return url;
+      });
     },
   };
 }
@@ -164,6 +199,8 @@ function assessPronunciation(referenceText, { onSessionStart, onSpeechStart, onI
     SpeechSDK.PronunciationAssessmentGranularity.Phoneme,
     true // enableMiscue — also flags omitted/inserted words, not just mispronounced ones
   );
+  // Intonation / stress / rhythm grading. Verified available in uaenorth.
+  pronunciationConfig.enableProsodyAssessment = true;
 
   const recognizer = new SpeechSDK.SpeechRecognizer(speechConfig, audioConfig);
   // Don't end the phrase on a short mid-sentence breath.
@@ -183,7 +220,11 @@ function assessPronunciation(referenceText, { onSessionStart, onSpeechStart, onI
   };
 
   recognizer.sessionStarted = () => { onSessionStart && onSessionStart(); };
-  recognizer.speechStartDetected = () => { onSpeechStart && onSpeechStart(); };
+  // e.offset is where Azure heard speech begin, in 100ns ticks from stream start.
+  // The caller uses it to line Azure's word offsets up with our local recording.
+  recognizer.speechStartDetected = (_s, e) => {
+    onSpeechStart && onSpeechStart(e && typeof e.offset === "number" ? e.offset : null);
+  };
   recognizer.recognizing = (_s, e) => { onInterim && onInterim(e.result.text); };
 
   recognizer.recognized = (_s, e) => {
@@ -210,6 +251,7 @@ function assessPronunciation(referenceText, { onSessionStart, onSpeechStart, onI
       accuracy: assessment.accuracyScore,
       fluency: assessment.fluencyScore,
       completeness: assessment.completenessScore,
+      prosody: assessment.prosodyScore,
       words,
     });
   };

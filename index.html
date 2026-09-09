@@ -50,6 +50,12 @@
           <span id="raTimer" class="timer" hidden>0.0s</span>
         </div>
 
+        <!-- 3·2·1 lead-in, so nobody speaks before Azure has connected. -->
+        <div class="countdown" id="raCountdown" hidden>
+          <span class="countdown-num" id="raCountdownNum">3</span>
+          <span class="countdown-label">get ready…</span>
+        </div>
+
         <!-- Live feedback while recording: proves the mic is open and Azure is listening. -->
         <div class="mic-monitor" id="raMonitor" hidden>
           <div class="monitor-row">
@@ -85,6 +91,11 @@
               <div class="score-bar"><div class="score-bar-fill" id="raCompletenessBar"></div></div>
               <span id="raCompletenessVal">—</span>
             </div>
+            <div class="score-bar-row" id="raProsodyRow">
+              <span>Prosody</span>
+              <div class="score-bar"><div class="score-bar-fill" id="raProsodyBar"></div></div>
+              <span id="raProsodyVal">—</span>
+            </div>
           </div>
           <div class="word-legend">
             <span class="word correct">correct</span>
@@ -93,6 +104,11 @@
             <span class="word insertion">inserted</span>
           </div>
           <p class="word-render" id="raWordRender"></p>
+          <p class="word-hint" id="raWordHint" hidden>Hover a word for phoneme scores · click to replay just that word</p>
+          <div class="controls result-actions">
+            <button id="raRetryBtn" class="mic-btn">🔁 Try this sentence again</button>
+            <button id="raPlayAllBtn" class="secondary-btn" hidden>▶ Play my recording</button>
+          </div>
         </div>
       </div>
     </section>
@@ -161,6 +177,11 @@
     </section>
 
   </main>
+
+  <!-- Phoneme breakdown popup, positioned next to whichever word is hovered. -->
+  <div class="phoneme-tip" id="phonemeTip" hidden role="tooltip"></div>
+  <!-- Holds the learner's take so single words can be replayed. -->
+  <audio id="raAudio" hidden></audio>
 
   <footer class="site-footer">
     Standalone demo — no backend, runs entirely in this browser against Azure Speech.

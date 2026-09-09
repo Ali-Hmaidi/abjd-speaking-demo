@@ -300,3 +300,96 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
   color: var(--muted);
   font-style: italic;
 }
+
+/* ---- 3·2·1 countdown ---- */
+
+.countdown {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 14px 0 4px;
+  padding: 14px 16px;
+  background: #fff8e9;
+  border: 1px solid #f0dfb8;
+  border-radius: 10px;
+}
+.countdown-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  background: var(--warn);
+  color: #fff;
+  font-size: 1.3rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.countdown-num.tick { animation: countPop 0.45s ease-out; }
+@keyframes countPop {
+  0%   { transform: scale(1.35); opacity: 0.45; }
+  100% { transform: scale(1);    opacity: 1; }
+}
+.countdown-label { color: #8a6d1f; font-size: 0.9rem; }
+
+/* ---- result actions ---- */
+
+.result-actions { margin-top: 14px; }
+
+.word-hint {
+  margin: 8px 0 0;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+/* ---- interactive scored words ---- */
+
+.word.has-detail { cursor: help; }
+.word.playable   { cursor: pointer; }
+.word.playable:hover {
+  outline: 2px solid var(--brand);
+  outline-offset: 1px;
+}
+.word.playing {
+  animation: wordPulse 0.6s ease-out;
+}
+@keyframes wordPulse {
+  0%   { box-shadow: 0 0 0 0 rgba(52, 84, 209, 0.55); }
+  100% { box-shadow: 0 0 0 12px rgba(52, 84, 209, 0); }
+}
+
+/* ---- phoneme tooltip ---- */
+
+.phoneme-tip {
+  position: absolute;
+  z-index: 50;
+  max-width: 300px;
+  padding: 9px 11px;
+  background: #1b2430;
+  color: #fff;
+  border-radius: 8px;
+  font-size: 0.8rem;
+  box-shadow: 0 8px 22px rgba(15, 22, 40, 0.28);
+  pointer-events: none;
+}
+.tip-head { font-weight: 700; margin-bottom: 6px; }
+.tip-phonemes { display: flex; flex-wrap: wrap; gap: 5px; }
+.tip-ph {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.12);
+  font-variant-numeric: tabular-nums;
+}
+.tip-ph b { font-family: ui-monospace, Consolas, monospace; }
+.tip-ph.good { color: #8ce0aa; }
+.tip-ph.warn { color: #f4d58a; }
+.tip-ph.bad  { color: #f4a49c; }
+.tip-foot {
+  margin-top: 6px;
+  opacity: 0.65;
+  font-size: 0.72rem;
+}
