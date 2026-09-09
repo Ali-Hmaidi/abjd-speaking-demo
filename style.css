@@ -405,3 +405,104 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 }
 .score-note.warn { background: #fdf1e3; border: 1px solid #f0d3ae; color: #8a5a1f; }
 .score-note.info { background: #eef2fd; border: 1px solid #cfd9f6; color: #35468f; }
+
+/* ---- coaching panel ---- */
+
+.coach {
+  margin-top: 18px;
+  padding: 16px;
+  background: #fbfcfe;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.coach-head {
+  margin: 0 0 12px;
+  font-size: 1rem;
+  color: var(--ink);
+}
+.coach-list { list-style: none; margin: 0; padding: 0; }
+
+.coach-item {
+  padding: 12px 0;
+  border-top: 1px solid var(--border);
+}
+.coach-item:first-child { border-top: none; padding-top: 0; }
+
+.coach-word {
+  font-weight: 700;
+  font-size: 1.02rem;
+  margin-right: 6px;
+}
+.coach-score {
+  display: inline-block;
+  padding: 1px 7px;
+  margin-right: 6px;
+  border-radius: 10px;
+  background: #fbe9e7;
+  color: var(--bad);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+}
+.coach-tag {
+  display: inline-block;
+  padding: 1px 8px;
+  margin-right: 6px;
+  border-radius: 10px;
+  background: #fdf1e3;
+  color: #8a5a1f;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+.coach-what { font-size: 0.9rem; line-height: 1.5; }
+
+.coach-phonemes { margin: 7px 0 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.coach-ph {
+  padding: 2px 8px;
+  border-radius: 5px;
+  background: #eef2fd;
+  color: #35468f;
+  font-size: 0.76rem;
+}
+
+.coach-how {
+  margin-top: 7px;
+  padding-left: 11px;
+  border-left: 3px solid var(--good);
+  font-size: 0.87rem;
+  line-height: 1.55;
+  color: #38424f;
+}
+
+.coach-actions { margin-top: 9px; display: flex; flex-wrap: wrap; gap: 8px; }
+.chip-btn {
+  padding: 4px 11px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: #fff;
+  color: var(--ink);
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+.chip-btn:hover:not(:disabled) { border-color: var(--brand); color: var(--brand); }
+.chip-btn:disabled { opacity: 0.5; cursor: default; }
+
+.coach-strengths {
+  margin: 12px 0 0;
+  padding-top: 11px;
+  border-top: 1px solid var(--border);
+  font-size: 0.85rem;
+  color: var(--good);
+}
+
+.coach-ai { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); }
+.coach-ai-note { margin: 8px 0 0; font-size: 0.82rem; color: var(--bad); }
+.coach-ai-out {
+  margin-top: 10px;
+  padding: 12px 14px;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 0.88rem;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}

@@ -77,48 +77,97 @@ async function createMicMeter({ onLevel, onError } = {}) {
   };
   tick();
 
-  // Optional tape of the take, so individual words can be replayed afterwards.
-  let recorder = null;
-  let chunks = [];
-  let recordingStartedAt = null;
+  // Tape of the take, captured as raw PCM rather than through MediaRecorder.
+  //
+  // A MediaRecorder webm blob carries no seek index, so <audio>.currentTime
+  // lands wherever the container's cluster boundaries happen to fall — fine for
+  // playing a whole take, useless for "play me the third word". Raw samples let
+  // playback start on an exact sample.
+  const CAPTURE_BUFFER = 4096;
+  const capture = ctx.createScriptProcessor(CAPTURE_BUFFER, 1, 1);
+  // A ScriptProcessor only runs while connected to the graph, but routing the
+  // mic to the speakers would howl — so the sink is a muted gain node.
+  const mute = ctx.createGain();
+  mute.gain.value = 0;
+  source.connect(capture);
+  capture.connect(mute);
+  mute.connect(ctx.destination);
+
+  let taping = false;
+  let pcm = [];
+  let taped = 0;
+
+  capture.onaudioprocess = (e) => {
+    if (!taping) return;
+    // The event buffer is recycled by the engine, so keep a copy.
+    const block = new Float32Array(e.inputBuffer.getChannelData(0));
+    pcm.push(block);
+    taped += block.length;
+  };
 
   return {
-    /** Start taping. Called at the same moment recognition starts, to keep offsets aligned. */
+    /** Start taping. Called as recognition starts, so the two clocks run together. */
     startRecording() {
-      if (typeof MediaRecorder === "undefined") return;
-      try {
-        recorder = new MediaRecorder(stream);
-        chunks = [];
-        recorder.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
-        recorder.start();
-        recordingStartedAt = Date.now();
-      } catch (_e) {
-        recorder = null; // replay is a bonus; scoring still works without it
-      }
+      pcm = [];
+      taped = 0;
+      taping = true;
     },
 
-    get recordingStartedAt() { return recordingStartedAt; },
-
-    /** Stops metering and taping. Resolves to an object URL for the take, or null. */
+    /** Stops metering and taping. Resolves to { samples, sampleRate }, or null. */
     stop() {
       if (raf) cancelAnimationFrame(raf);
       raf = null;
-      const finished = new Promise((resolve) => {
-        if (!recorder || recorder.state === "inactive") return resolve(null);
-        recorder.onstop = () => {
-          resolve(chunks.length
-            ? URL.createObjectURL(new Blob(chunks, { type: recorder.mimeType || "audio/webm" }))
-            : null);
-        };
-        try { recorder.stop(); } catch (_e) { resolve(null); }
-      });
-      return finished.then((url) => {
-        stream.getTracks().forEach((t) => t.stop());
-        if (ctx.state !== "closed") ctx.close().catch(() => {});
-        return url;
-      });
+      taping = false;
+
+      const sampleRate = ctx.sampleRate;
+      let samples = null;
+      if (taped) {
+        samples = new Float32Array(taped);
+        let at = 0;
+        for (const block of pcm) { samples.set(block, at); at += block.length; }
+      }
+      pcm = [];
+
+      capture.onaudioprocess = null;
+      try { source.disconnect(); capture.disconnect(); mute.disconnect(); } catch (_e) {}
+      stream.getTracks().forEach((t) => t.stop());
+      if (ctx.state !== "closed") ctx.close().catch(() => {});
+
+      return Promise.resolve(samples ? { samples, sampleRate } : null);
     },
   };
+}
+
+/**
+ * Where speech actually starts in a take, in seconds.
+ *
+ * Measured off the recorded samples after the fact, not off the live meter —
+ * the meter's value is deliberately smoothed for a calm-looking bar, which lags
+ * the true onset by enough to smear word replay. Energy is compared against the
+ * take's own peak, so it adapts to a quiet mic instead of using a fixed floor.
+ */
+function detectOnset(samples, sampleRate) {
+  const win = Math.max(1, Math.round(sampleRate * 0.01)); // 10ms windows
+  const windows = Math.floor(samples.length / win);
+  if (!windows) return 0;
+
+  const rms = new Float32Array(windows);
+  let peak = 0;
+  for (let w = 0; w < windows; w++) {
+    let sum = 0;
+    const base = w * win;
+    for (let i = 0; i < win; i++) { const v = samples[base + i]; sum += v * v; }
+    rms[w] = Math.sqrt(sum / win);
+    if (rms[w] > peak) peak = rms[w];
+  }
+  if (peak <= 0) return 0;
+
+  const threshold = Math.max(peak * 0.12, 0.004);
+  // Require two consecutive loud windows so a click or lip smack isn't the onset.
+  for (let w = 0; w < windows - 1; w++) {
+    if (rms[w] >= threshold && rms[w + 1] >= threshold) return (w * win) / sampleRate;
+  }
+  return 0;
 }
 
 // How long a silence ends a phrase. Long enough that a reader drawing breath

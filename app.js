@@ -120,7 +120,6 @@ const raPlayAllBtn = document.getElementById("raPlayAllBtn");
 const raWordHint = document.getElementById("raWordHint");
 const raProsodyRow = document.getElementById("raProsodyRow");
 const raNote = document.getElementById("raNote");
-const raAudio = document.getElementById("raAudio");
 const phonemeTip = document.getElementById("phonemeTip");
 
 let raRecording = false;
@@ -130,11 +129,16 @@ let raTimerId = null;
 let raStartedAt = null;
 let raHeardSound = false;
 let raCountdownId = null;
-let raAudioUrl = null;      // object URL of the last take
-let raAlignSec = 0;         // recording-clock ≈ azure-clock offset, seconds
-let raFirstSoundAt = null;  // wall-clock ms when the mic first heard the learner
-let raSpeechStartSec = null;// where Azure says speech began, seconds into its stream
+let raTake = null;          // { samples, sampleRate } of the last read
+let raBuffer = null;        // that take as an AudioBuffer, built once
+let raPlayCtx = null;       // playback context, separate from the capture one
+let raAlignSec = 0;         // recording clock -> Azure clock offset, seconds
 let raStopWordPlayback = null;
+
+// Nudge slices out a little at each end; word boundaries from a recogniser are
+// approximate, and a hard cut swallows the consonant that starts the word.
+const SLICE_PAD_BEFORE = 0.07;
+const SLICE_PAD_AFTER = 0.10;
 
 const TICKS_PER_SEC = 10_000_000; // Azure reports offsets in 100-nanosecond ticks
 
@@ -176,14 +180,10 @@ function raTeardown() {
 
 /** Drop the previous take — new attempt, new audio. */
 function raClearRecording() {
-  if (raStopWordPlayback) raStopWordPlayback();
-  raAudio.pause();
-  raAudio.removeAttribute("src");
-  if (raAudioUrl) URL.revokeObjectURL(raAudioUrl);
-  raAudioUrl = null;
+  raStopPlayback();
+  raTake = null;
+  raBuffer = null;
   raAlignSec = 0;
-  raFirstSoundAt = null;
-  raSpeechStartSec = null;
   raPlayAllBtn.hidden = true;
   hidePhonemeTip();
 }
@@ -232,7 +232,7 @@ function renderWords(words) {
     );
 
     // Omissions were never spoken, so there is no audio to replay for them.
-    const playable = raAudioUrl && d.ErrorType !== "Omission" && typeof w.Offset === "number";
+    const playable = raTake && d.ErrorType !== "Omission" && typeof w.Offset === "number";
     if (playable) {
       span.classList.add("playable");
       span.dataset.start = (w.Offset / TICKS_PER_SEC).toFixed(3);
@@ -292,26 +292,47 @@ raWordRender.addEventListener("mouseout", (e) => {
 
 // ---- per-word replay ----
 
-/** Play just [start, start+dur] of the take, using the calibrated alignment. */
-function playSlice(startSec, durSec) {
-  if (!raAudioUrl) return;
-  if (raStopWordPlayback) raStopWordPlayback();
-
-  const from = Math.max(0, startSec + raAlignSec);
-  raAudio.currentTime = from;
-  const play = raAudio.play();
-  if (play && play.catch) play.catch(() => {});
-
-  const stopAt = from + durSec + 0.06; // a hair of tail so the word isn't clipped
-  const watch = setInterval(() => {
-    if (raAudio.currentTime >= stopAt || raAudio.paused) stop();
-  }, 20);
-  function stop() {
-    clearInterval(watch);
-    raAudio.pause();
-    raStopWordPlayback = null;
+/** Lazily build the playback context and buffer for the current take. */
+function raEnsureBuffer() {
+  if (!raTake) return null;
+  if (!raPlayCtx) raPlayCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (raPlayCtx.state === "suspended") raPlayCtx.resume().catch(() => {});
+  if (!raBuffer) {
+    raBuffer = raPlayCtx.createBuffer(1, raTake.samples.length, raTake.sampleRate);
+    raBuffer.copyToChannel(raTake.samples, 0);
   }
-  raStopWordPlayback = stop;
+  return raBuffer;
+}
+
+function raStopPlayback() {
+  if (raStopWordPlayback) raStopWordPlayback();
+}
+
+/**
+ * Play [start, start+dur] of the take, in Azure's clock.
+ *
+ * AudioBufferSourceNode.start takes an offset and duration in seconds and
+ * begins on the exact sample, which is why the take is kept as raw PCM.
+ */
+function playSlice(startSec, durSec) {
+  const buffer = raEnsureBuffer();
+  if (!buffer) return;
+  raStopPlayback();
+
+  const from = Math.max(0, startSec + raAlignSec - SLICE_PAD_BEFORE);
+  const span = Math.max(0.05, durSec + SLICE_PAD_BEFORE + SLICE_PAD_AFTER);
+  if (from >= buffer.duration) return;
+
+  const src = raPlayCtx.createBufferSource();
+  src.buffer = buffer;
+  src.connect(raPlayCtx.destination);
+  src.start(0, from, Math.min(span, buffer.duration - from));
+
+  raStopWordPlayback = () => {
+    try { src.stop(); } catch (_e) {}
+    raStopWordPlayback = null;
+  };
+  src.onended = () => { raStopWordPlayback = null; };
 }
 
 raWordRender.addEventListener("click", (e) => {
@@ -324,11 +345,18 @@ raWordRender.addEventListener("click", (e) => {
 });
 
 raPlayAllBtn.addEventListener("click", () => {
-  if (!raAudioUrl) return;
-  if (raStopWordPlayback) raStopWordPlayback();
-  raAudio.currentTime = 0;
-  const play = raAudio.play();
-  if (play && play.catch) play.catch(() => {});
+  const buffer = raEnsureBuffer();
+  if (!buffer) return;
+  raStopPlayback();
+  const src = raPlayCtx.createBufferSource();
+  src.buffer = buffer;
+  src.connect(raPlayCtx.destination);
+  src.start();
+  raStopWordPlayback = () => {
+    try { src.stop(); } catch (_e) {}
+    raStopWordPlayback = null;
+  };
+  src.onended = () => { raStopWordPlayback = null; };
 });
 
 raRecordBtn.addEventListener("click", async () => {
@@ -361,7 +389,6 @@ raRecordBtn.addEventListener("click", async () => {
       raLevel.classList.toggle("hot", level > 0.08);
       if (level > 0.08 && !raHeardSound) {
         raHeardSound = true;
-        raFirstSoundAt = Date.now();
         raLevelHint.textContent = "hearing you ✓";
         raLevelHint.classList.add("ok");
       }
@@ -392,10 +419,9 @@ raRecordBtn.addEventListener("click", async () => {
       raPipeline.className = "pipeline-state live";
       setStatus(raStatus, "Listening", "active");
     },
-    onSpeechStart: (offsetTicks) => {
+    onSpeechStart: () => {
       raPipeline.textContent = "speech detected ✓";
       raPipeline.className = "pipeline-state live";
-      if (typeof offsetTicks === "number") raSpeechStartSec = offsetTicks / TICKS_PER_SEC;
     },
     onInterim: (text) => {
       raInterim.textContent = text;
@@ -407,20 +433,23 @@ raRecordBtn.addEventListener("click", async () => {
     },
     onResult: async (r) => {
       // Close the tape before rendering, so word replay has audio to point at.
-      const recStartedAt = raMeter ? raMeter.recordingStartedAt : null;
-      raAudioUrl = raMeter ? await raMeter.stop() : null;
+      raTake = raMeter ? await raMeter.stop() : null;
+      raBuffer = null;
       raMeter = null;
       raTeardown();
 
-      // Calibrate Azure's stream clock against our recording clock: both saw the
-      // same speech onset, so the gap between them is the constant to subtract.
+      // Calibrate the two clocks. Both observers heard the same first syllable:
+      // detectOnset says where it sits in our samples, and the first scored
+      // word's offset says where Azure thinks it sits. The gap is the constant.
       raAlignSec = 0;
-      if (raAudioUrl && raFirstSoundAt && recStartedAt && raSpeechStartSec !== null) {
-        const localOnset = (raFirstSoundAt - recStartedAt) / 1000;
-        raAlignSec = localOnset - raSpeechStartSec;
-      }
-      if (raAudioUrl) {
-        raAudio.src = raAudioUrl;
+      if (raTake) {
+        const firstSpoken = (r.words || []).find(
+          (w) => wordDetail(w).ErrorType !== "Omission" && typeof w.Offset === "number"
+        );
+        if (firstSpoken) {
+          const localOnset = detectOnset(raTake.samples, raTake.sampleRate);
+          raAlignSec = localOnset - firstSpoken.Offset / TICKS_PER_SEC;
+        }
         raPlayAllBtn.hidden = false;
       }
 
@@ -439,6 +468,8 @@ raRecordBtn.addEventListener("click", async () => {
         raProsodyRow.hidden = true;
       }
       renderWords(r.words);
+      raLastResult = r;
+      raRenderCoach(r, sentenceText.textContent);
     },
     onError: (err) => {
       // If the mic never registered sound, that's the more useful thing to say.
@@ -450,6 +481,153 @@ raRecordBtn.addEventListener("click", async () => {
       setStatus(raStatus, msg, "bad");
     },
   });
+});
+
+// ---- coaching panel ----
+
+const raCoach = document.getElementById("raCoach");
+const raCoachHead = document.getElementById("raCoachHead");
+const raCoachList = document.getElementById("raCoachList");
+const raCoachStrengths = document.getElementById("raCoachStrengths");
+const raCoachAi = document.getElementById("raCoachAi");
+const raCoachAiBtn = document.getElementById("raCoachAiBtn");
+const raCoachAiNote = document.getElementById("raCoachAiNote");
+const raCoachAiOut = document.getElementById("raCoachAiOut");
+
+const MAX_COACH_ISSUES = 3;   // a learner can act on three things, not nine
+let raLastAnalysis = null;
+let raLastResult = null;
+
+/** Find where a word sits in the take, so "hear yours" can replay just it. */
+function raWordSlice(word) {
+  const match = (raLastResult && raLastResult.words || []).find(
+    (w) => w.Word === word && wordDetail(w).ErrorType !== "Omission" && typeof w.Offset === "number"
+  );
+  if (!match) return null;
+  return { start: match.Offset / TICKS_PER_SEC, dur: (match.Duration || 0) / TICKS_PER_SEC };
+}
+
+function raRenderCoach(result, referenceText) {
+  const analysis = analyzeReading(result, referenceText);
+  raLastAnalysis = analysis;
+  raCoachHead.textContent = analysis.headline;
+  raCoachList.innerHTML = "";
+
+  // Whole-read problems first — no point polishing a /th/ if half the sentence
+  // went unread.
+  for (const g of analysis.global) {
+    const li = document.createElement("li");
+    li.className = "coach-item global";
+    li.innerHTML =
+      `<div class="coach-what"><span class="coach-tag">${g.title}</span> ${g.problem}</div>` +
+      `<div class="coach-how">${g.fix}</div>`;
+    raCoachList.appendChild(li);
+  }
+
+  for (const issue of analysis.issues.slice(0, MAX_COACH_ISSUES)) {
+    const li = document.createElement("li");
+    li.className = "coach-item " + issue.kind;
+
+    const chips = issue.phonemes
+      .filter((p) => p.tip)
+      .map((p) => `<span class="coach-ph">${p.tip.label} · ${p.score}</span>`)
+      .join("");
+
+    li.innerHTML =
+      `<div class="coach-what">` +
+      `<span class="coach-word">${issue.word}</span>` +
+      (typeof issue.score === "number" ? `<span class="coach-score">${Math.round(issue.score)}/100</span>` : "") +
+      ` ${issue.problem}</div>` +
+      (chips ? `<div class="coach-phonemes">${chips}</div>` : "") +
+      `<div class="coach-how"><b>Try this:</b> ${issue.fix}</div>`;
+
+    const actions = document.createElement("div");
+    actions.className = "coach-actions";
+
+    const hear = document.createElement("button");
+    hear.className = "chip-btn";
+    hear.textContent = "🔊 Hear it correctly";
+    hear.addEventListener("click", () => {
+      hear.disabled = true;
+      speak(issue.word, {
+        onDone: () => { hear.disabled = false; },
+        onError: () => { hear.disabled = false; },
+      });
+    });
+    actions.appendChild(hear);
+
+    const slice = issue.playable ? raWordSlice(issue.word) : null;
+    if (slice && raTake) {
+      const mine = document.createElement("button");
+      mine.className = "chip-btn";
+      mine.textContent = "🎧 Hear yours";
+      mine.addEventListener("click", () => playSlice(slice.start, slice.dur));
+      actions.appendChild(mine);
+    }
+
+    li.appendChild(actions);
+    raCoachList.appendChild(li);
+  }
+
+  if (analysis.strengths.length) {
+    raCoachStrengths.textContent = "✅ " + analysis.strengths.join(" ");
+    raCoachStrengths.hidden = false;
+  } else {
+    raCoachStrengths.hidden = true;
+  }
+
+  // The LLM layer is optional; only offer it when the server says a key exists.
+  const coachCfg = (window.APP_CONFIG && window.APP_CONFIG.coach) || {};
+  raCoachAi.hidden = !coachCfg.enabled;
+  raCoachAiOut.hidden = true;
+  raCoachAiOut.textContent = "";
+  raCoachAiNote.hidden = true;
+  raCoachAiBtn.disabled = false;
+  raCoachAiBtn.textContent = "🧠 Ask the AI coach for a practice plan";
+
+  raCoach.hidden = false;
+}
+
+raCoachAiBtn.addEventListener("click", async () => {
+  if (!raLastResult) return;
+  raCoachAiBtn.disabled = true;
+  raCoachAiBtn.textContent = "Thinking…";
+  raCoachAiNote.hidden = true;
+
+  try {
+    const res = await fetch("/api/coach", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        sentence: sentenceText.textContent,
+        heard: raLastResult.recognizedText,
+        scores: {
+          overall: raLastResult.overall,
+          accuracy: raLastResult.accuracy,
+          fluency: raLastResult.fluency,
+          completeness: raLastResult.completeness,
+          prosody: raLastResult.prosody,
+        },
+        // Only the weak spots — the model doesn't need the clean words.
+        issues: (raLastAnalysis ? raLastAnalysis.issues : []).slice(0, 5).map((i) => ({
+          word: i.word, score: i.score, kind: i.kind,
+          phonemes: i.phonemes.map((p) => ({ symbol: p.symbol, score: p.score })),
+        })),
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data && data.error ? data.error : "Coach request failed");
+
+    raCoachAiOut.textContent = data.text || "(no advice returned)";
+    raCoachAiOut.hidden = false;
+    raCoachAiBtn.textContent = "🧠 Ask again";
+  } catch (err) {
+    raCoachAiNote.textContent = String(err.message || err);
+    raCoachAiNote.hidden = false;
+    raCoachAiBtn.textContent = "🧠 Try again";
+  } finally {
+    raCoachAiBtn.disabled = false;
+  }
 });
 
 /**
