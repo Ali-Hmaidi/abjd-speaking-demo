@@ -119,6 +119,7 @@ const raRetryBtn = document.getElementById("raRetryBtn");
 const raPlayAllBtn = document.getElementById("raPlayAllBtn");
 const raWordHint = document.getElementById("raWordHint");
 const raProsodyRow = document.getElementById("raProsodyRow");
+const raNote = document.getElementById("raNote");
 const raAudio = document.getElementById("raAudio");
 const phonemeTip = document.getElementById("phonemeTip");
 
@@ -399,6 +400,11 @@ raRecordBtn.addEventListener("click", async () => {
     onInterim: (text) => {
       raInterim.textContent = text;
     },
+    onFlushing: () => {
+      raPipeline.textContent = "finishing — waiting for the last words…";
+      raPipeline.className = "pipeline-state";
+      setStatus(raStatus, "Scoring…", "active");
+    },
     onResult: async (r) => {
       // Close the tape before rendering, so word replay has audio to point at.
       const recStartedAt = raMeter ? raMeter.recordingStartedAt : null;
@@ -420,6 +426,7 @@ raRecordBtn.addEventListener("click", async () => {
 
       setStatus(raStatus, "Scored", "good");
       raResults.hidden = false;
+      raShowNote(r);
       raOverallScore.textContent = Math.round(r.overall || 0);
       setBar("raAccuracyBar", "raAccuracyVal", r.accuracy);
       setBar("raFluencyBar", "raFluencyVal", r.fluency);
@@ -444,6 +451,31 @@ raRecordBtn.addEventListener("click", async () => {
     },
   });
 });
+
+/**
+ * Say when a score shouldn't be trusted at face value.
+ *
+ * A partial read still scores, but low — truncating a good read to 60% of its
+ * length takes accuracy from 95 to 74 — so an unexplained low number reads as
+ * "you pronounced it badly" when it really means "we only heard some of it".
+ */
+function raShowNote(r) {
+  const comp = typeof r.completeness === "number" ? r.completeness : 100;
+  if (comp < 60) {
+    raNote.textContent =
+      `Only about ${Math.round(comp)}% of the sentence was captured, so this score reflects a partial read. ` +
+      `Read the whole sentence, then press Done.`;
+    raNote.className = "score-note warn";
+    raNote.hidden = false;
+  } else if (r.aggregated) {
+    raNote.textContent =
+      `Your read was split into ${r.segmentCount} parts by a long pause; the scores are combined across them.`;
+    raNote.className = "score-note info";
+    raNote.hidden = false;
+  } else {
+    raNote.hidden = true;
+  }
+}
 
 /** Ticks 3·2·1 in the UI. Resolves false if the attempt was cancelled mid-count. */
 function raRunCountdown(from) {

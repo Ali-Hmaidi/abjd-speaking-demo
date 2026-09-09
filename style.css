@@ -393,3 +393,15 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
   opacity: 0.65;
   font-size: 0.72rem;
 }
+
+/* ---- caveat shown above a score that shouldn't be read at face value ---- */
+
+.score-note {
+  margin: 0 0 12px;
+  padding: 9px 12px;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  line-height: 1.45;
+}
+.score-note.warn { background: #fdf1e3; border: 1px solid #f0d3ae; color: #8a5a1f; }
+.score-note.info { background: #eef2fd; border: 1px solid #cfd9f6; color: #35468f; }
